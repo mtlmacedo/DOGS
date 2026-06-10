@@ -3,7 +3,7 @@ import tensorflow_datasets as tfds
 
 (ds_train, ds_test), info = tfds.load(
     "stanford_dogs",
-    split=["train[:80%]", "train[80%:]"],
+    split=["train[:10%]", "train[10%:12%]"],
     as_supervised=True,
     with_info=True
 )
@@ -12,11 +12,23 @@ NUM_CLASSES = info.features["label"].num_classes
 
 def preprocess(image, label):
     image = tf.image.resize(image, (224,224))
-    image = image / 255.0
+    image = tf.keras.applications.efficientnet.preprocess_input(image)
     return image, label
 
-ds_train = ds_train.map(preprocess).batch(32)
-ds_test = ds_test.map(preprocess).batch(32)
+ds_train = (
+    ds_train
+    .map(preprocess)
+    .shuffle(1000)
+    .batch(32)
+    .prefetch(tf.data.AUTOTUNE)
+)
+
+ds_test = (
+    ds_test
+    .map(preprocess)
+    .batch(32)
+    .prefetch(tf.data.AUTOTUNE)
+)
 
 base_model = tf.keras.applications.EfficientNetB0(
     include_top=False,
@@ -28,8 +40,18 @@ base_model.trainable = False
 
 model = tf.keras.Sequential([
     base_model,
+
     tf.keras.layers.GlobalAveragePooling2D(),
-    tf.keras.layers.Dense(NUM_CLASSES, activation="softmax")
+
+    tf.keras.layers.Dense(
+        512,
+        activation="relu"
+    ),
+
+    tf.keras.layers.Dense(
+        NUM_CLASSES,
+        activation="softmax"
+    )
 ])
 
 model.compile(
@@ -44,13 +66,13 @@ early_stop = tf.keras.callbacks.EarlyStopping(
     restore_best_weights=True
 )
 
-model.fit(
+history = model.fit(
     ds_train,
     validation_data=ds_test,
-    epochs=50,
+    epochs=20,
     callbacks=[early_stop]
 )
 
 loss, acc = model.evaluate(ds_test)
 
-print("Accuracy:", acc)
+print(acc)
